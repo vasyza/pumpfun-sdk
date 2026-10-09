@@ -1,8 +1,7 @@
-package pumpfun
+package curve
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,19 @@ import (
 	"testing"
 
 	"github.com/mr-tron/base58"
+	"github.com/vasyza/pumpfun-sdk/internal/errs"
+	"github.com/vasyza/pumpfun-sdk/internal/solana"
+	"github.com/vasyza/pumpfun-sdk/internal/testutil"
+	"github.com/vasyza/pumpfun-sdk/internal/transport"
 )
+
+const testMint = testutil.Mint
+const testCreator = testutil.Creator
+
+func testClient(t *testing.T, handler http.HandlerFunc, change func(*transport.Options)) *Service {
+	t.Helper()
+	return New(solana.New(testutil.Transport(t, handler, change)))
+}
 
 func curveBytes(remaining uint64, complete bool) []byte {
 	data := make([]byte, 166)
@@ -26,18 +37,9 @@ func curveBytes(remaining uint64, complete bool) []byte {
 	return data
 }
 
-func encodedAccount(data []byte, owner string) map[string]any {
-	return map[string]any{"owner": owner, "executable": false, "data": []string{base64.StdEncoding.EncodeToString(data), "base64"}}
-}
-
-func rpcReply(t *testing.T, w http.ResponseWriter, id uint64, value any) {
-	t.Helper()
-	writeJSON(t, w, map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"context": map[string]any{"slot": 123}, "value": value}})
-}
-
-func TestDeriveBondingCurveAddress(t *testing.T) {
+func TestDeriveAddress(t *testing.T) {
 	// This address was checked against the Pump frontend API.
-	address, err := DeriveBondingCurveAddress(testMint)
+	address, err := DeriveAddress(testMint)
 	if err != nil || address != "7XMeiu8AZvgTzEdA5vq3Q8dMCLMpTTgLdB3n5FAv1CT1" {
 		t.Fatalf("address = %s, err = %v", address, err)
 	}
@@ -56,19 +58,19 @@ func TestDecodeCurveLayouts(t *testing.T) {
 		}
 	}
 	for _, data := range [][]byte{make([]byte, 49), curveBytes(0, true)[:48]} {
-		if _, err := DecodeBondingCurve(data); !errors.Is(err, ErrDecode) {
+		if _, err := DecodeBondingCurve(data); !errors.Is(err, errs.ErrDecode) {
 			t.Fatalf("error = %v", err)
 		}
 	}
 	data := curveBytes(1, false)
 	data[48] = 2
-	if _, err := DecodeBondingCurve(data); !errors.Is(err, ErrDecode) {
+	if _, err := DecodeBondingCurve(data); !errors.Is(err, errs.ErrDecode) {
 		t.Fatalf("boolean error = %v", err)
 	}
 }
 
 func TestGetCurveAndAccountChecks(t *testing.T) {
-	for _, owner := range []string{PumpProgramID, TokenProgram, "missing"} {
+	for _, owner := range []string{solana.PumpProgramID, solana.TokenProgram, "missing"} {
 		t.Run(owner, func(t *testing.T) {
 			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 				var request struct {
@@ -84,23 +86,23 @@ func TestGetCurveAndAccountChecks(t *testing.T) {
 					t.Errorf("request = %+v", request)
 				}
 				if owner == "missing" {
-					rpcReply(t, w, request.ID, nil)
+					testutil.RPCReply(t, w, request.ID, nil)
 				} else {
-					rpcReply(t, w, request.ID, encodedAccount(curveBytes(1234, false), owner))
+					testutil.RPCReply(t, w, request.ID, testutil.EncodedAccount(curveBytes(1234, false), owner))
 				}
 			}, nil)
 			curve, err := client.GetBondingCurve(context.Background(), testMint)
 			switch owner {
-			case PumpProgramID:
+			case solana.PumpProgramID:
 				if err != nil || curve.Slot != 123 || curve.RealTokenReserves != "1234" {
 					t.Fatalf("curve = %+v, err = %v", curve, err)
 				}
 			case "missing":
-				if !errors.Is(err, ErrNotFound) {
+				if !errors.Is(err, errs.ErrNotFound) {
 					t.Fatal(err)
 				}
 			default:
-				if !errors.Is(err, ErrDecode) {
+				if !errors.Is(err, errs.ErrDecode) {
 					t.Fatal(err)
 				}
 			}
@@ -143,7 +145,7 @@ func TestGraduationProgress(t *testing.T) {
 				global := make([]byte, 113)
 				copy(global, globalDiscriminator[:])
 				binary.LittleEndian.PutUint64(global[89:97], tc.initial)
-				rpcReply(t, w, request.ID, []any{encodedAccount(curve, PumpProgramID), encodedAccount(global, PumpProgramID)})
+				testutil.RPCReply(t, w, request.ID, []any{testutil.EncodedAccount(curve, solana.PumpProgramID), testutil.EncodedAccount(global, solana.PumpProgramID)})
 			}, nil)
 			result, err := client.GetGraduationProgress(context.Background(), testMint)
 			if err != nil {
@@ -161,58 +163,3 @@ func TestGraduationProgress(t *testing.T) {
 }
 
 func ptrFloat(v float64) *float64 { return &v }
-
-func TestHoldersResolveToken2022Owner(t *testing.T) {
-	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		var request struct {
-			Method string `json:"method"`
-			ID     uint64 `json:"id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Error(err)
-			return
-		}
-		switch request.Method {
-		case "getTokenLargestAccounts":
-			rpcReply(t, w, request.ID, []any{map[string]any{"address": testCreator, "amount": "9007199254740993", "decimals": 6}})
-		case "getTokenSupply":
-			rpcReply(t, w, request.ID, map[string]any{"amount": "18014398509481986"})
-		case "getMultipleAccounts":
-			data := make([]byte, 165)
-			mint, _ := base58.Decode(testMint)
-			owner, _ := base58.Decode(testCreator)
-			copy(data, mint)
-			copy(data[32:64], owner)
-			rpcReply(t, w, request.ID, []any{encodedAccount(data, Token2022Program)})
-		default:
-			t.Error(request.Method)
-		}
-	}, nil)
-	result, err := client.GetHolders(context.Background(), testMint)
-	if err != nil || len(result.Accounts) != 1 || result.Accounts[0].Owner != testCreator || result.Accounts[0].SharePercent != 50 {
-		t.Fatalf("result = %+v, err = %v", result, err)
-	}
-}
-
-func TestRPCErrorAndWrongID(t *testing.T) {
-	for _, badID := range []bool{false, true} {
-		client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-			var request struct {
-				ID uint64 `json:"id"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Error(err)
-				return
-			}
-			id := request.ID
-			if badID {
-				id++
-			}
-			writeJSON(t, w, map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32005, "message": "secret"}})
-		}, nil)
-		_, err := client.GetBondingCurve(context.Background(), testMint)
-		if badID && !errors.Is(err, ErrDecode) || !badID && !errors.Is(err, ErrRPC) {
-			t.Fatalf("wrong ID = %v, err = %v", badID, err)
-		}
-	}
-}

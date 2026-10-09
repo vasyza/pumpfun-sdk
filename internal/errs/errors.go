@@ -1,7 +1,10 @@
-package pumpfun
+package errs
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -63,10 +66,29 @@ var (
 	ErrStreamActive    = &Error{Kind: KindStreamActive, Message: "A stream is already active on this client."}
 )
 
-func invalid(op, message string) error {
+// Invalid reports an input error.
+func Invalid(op, message string) error {
 	return &Error{Kind: KindInvalidArgument, Operation: op, Message: message}
 }
 
-func decodeError(op string, cause error) error {
+// Decode reports a response error.
+func Decode(op string, cause error) error {
 	return &Error{Kind: KindDecode, Operation: op, Message: "The response is not valid.", Cause: cause}
+}
+
+// Transport reports a connection error without its URL.
+func Transport(op string, err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		err = uerr.Err
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return Context(op, err)
+	}
+	return &Error{Kind: KindTransport, Operation: op, Message: ErrTransport.Message, Cause: err}
+}
+
+// Context reports cancellation or a time limit.
+func Context(op string, cause error) error {
+	return &Error{Kind: KindCanceled, Operation: op, Message: "The operation stopped or its time limit expired.", Cause: cause}
 }

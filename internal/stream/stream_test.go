@@ -1,4 +1,4 @@
-package pumpfun
+package stream
 
 import (
 	"context"
@@ -10,7 +10,19 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/vasyza/pumpfun-sdk/internal/errs"
+	"github.com/vasyza/pumpfun-sdk/internal/testutil"
+	"github.com/vasyza/pumpfun-sdk/internal/transport"
 )
+
+const testMint = testutil.Mint
+
+type Options = transport.Options
+
+func testClient(t *testing.T, handler http.HandlerFunc, change func(*Options)) *Service {
+	t.Helper()
+	return New(testutil.Transport(t, handler, change))
+}
 
 func TestStreamSubscriptionsAndObservation(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -19,7 +31,7 @@ func TestStreamSubscriptionsAndObservation(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		for _, expected := range []string{"subscribeNewToken", "subscribeMigration", "subscribeTokenTrade"} {
 			_, data, err := conn.Read(r.Context())
 			if err != nil {
@@ -62,7 +74,7 @@ func TestObservationWindowAndParentCancellation(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		_, _, _ = conn.Read(r.Context())
 		_, _, _ = conn.Read(r.Context())
 	}, nil)
@@ -86,7 +98,7 @@ func TestOnlyOneActiveStream(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		_, _, _ = conn.Read(r.Context())
 		close(ready)
 		_, _, _ = conn.Read(r.Context())
@@ -101,7 +113,7 @@ func TestOnlyOneActiveStream(t *testing.T) {
 		t.Fatal("the stream did not connect")
 	}
 	err := client.StreamNewCoins(ctx, func(context.Context, StreamEvent) error { return nil })
-	if !errors.Is(err, ErrStreamActive) {
+	if !errors.Is(err, errs.ErrStreamActive) {
 		t.Fatal(err)
 	}
 	cancel()
@@ -118,7 +130,7 @@ func TestStreamReconnectAndHandlerStop(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		_, _, _ = conn.Read(r.Context())
 		if calls.Add(1) == 1 {
 			return
@@ -140,13 +152,13 @@ func TestStreamServiceError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		_, _, _ = conn.Read(r.Context())
 		_ = conn.Write(r.Context(), websocket.MessageText, []byte(`{"errors":["API key secret"]}`))
 		_, _, _ = conn.Read(r.Context())
 	}, nil)
 	err := client.StreamNewCoins(context.Background(), func(context.Context, StreamEvent) error { return nil })
-	if !errors.Is(err, ErrUnauthorized) {
+	if !errors.Is(err, errs.ErrUnauthorized) {
 		t.Fatal(err)
 	}
 }
