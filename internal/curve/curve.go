@@ -111,7 +111,7 @@ func (c *Service) GetBondingCurve(ctx context.Context, mint string) (*BondingCur
 	if err != nil {
 		return nil, err
 	}
-	data, err := solana.ProgramAccountData(wire.Value, "get_bonding_curve")
+	data, err := curveAccountData(wire.Value, "get_bonding_curve")
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +121,23 @@ func (c *Service) GetBondingCurve(ctx context.Context, mint string) (*BondingCur
 	}
 	curve.Mint, curve.Address, curve.Slot = mint, address, wire.Context.Slot
 	return curve, nil
+}
+
+func curveAccountData(account *solana.Account, op string) ([]byte, error) {
+	notFound := func() ([]byte, error) {
+		return nil, &errs.Error{Kind: errs.KindNotFound, Operation: op, Message: "No bonding curve exists for this mint."}
+	}
+	if account == nil || account.Owner != solana.PumpProgramID || account.Executable {
+		return notFound()
+	}
+	data, err := solana.AccountBase64(account.Data, op)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < len(curveDiscriminator) || [8]byte(data[:8]) != curveDiscriminator {
+		return notFound()
+	}
+	return data, nil
 }
 
 // GraduationProgress reports reserve depletion. Percent is an estimate that
@@ -151,7 +168,7 @@ func (c *Service) GetGraduationProgress(ctx context.Context, mint string) (*Grad
 	if len(wire.Value) != 2 {
 		return nil, errs.Decode("get_progress", errors.New("the account count does not match"))
 	}
-	curveData, err := solana.ProgramAccountData(wire.Value[0], "get_progress")
+	curveData, err := curveAccountData(wire.Value[0], "get_progress")
 	if err != nil {
 		return nil, err
 	}

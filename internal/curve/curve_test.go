@@ -97,16 +97,59 @@ func TestGetCurveAndAccountChecks(t *testing.T) {
 				if err != nil || curve.Slot != 123 || curve.RealTokenReserves != "1234" {
 					t.Fatalf("curve = %+v, err = %v", curve, err)
 				}
-			case "missing":
-				if !errors.Is(err, errs.ErrNotFound) {
-					t.Fatal(err)
-				}
 			default:
-				if !errors.Is(err, errs.ErrDecode) {
+				var typed *errs.Error
+				if !errors.Is(err, errs.ErrNotFound) || !errors.As(err, &typed) || typed.Message != "No bonding curve exists for this mint." {
 					t.Fatal(err)
 				}
 			}
 		})
+	}
+}
+
+func TestMissingCurveAndInvalidCurveData(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		account any
+		want    error
+	}{
+		{name: "absent", account: nil, want: errs.ErrNotFound},
+		{name: "other owner", account: testutil.EncodedAccount(curveBytes(0, false), solana.TokenProgram), want: errs.ErrNotFound},
+		{name: "empty state", account: testutil.EncodedAccount([]byte{}, solana.PumpProgramID), want: errs.ErrNotFound},
+		{name: "other state", account: testutil.EncodedAccount(make([]byte, 166), solana.PumpProgramID), want: errs.ErrNotFound},
+		{name: "invalid encoding", account: map[string]any{"owner": solana.PumpProgramID, "data": []string{"!", "base64"}}, want: errs.ErrDecode},
+		{name: "short curve", account: testutil.EncodedAccount(curveDiscriminator[:], solana.PumpProgramID), want: errs.ErrDecode},
+	} {
+		for _, progress := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/curve", true: "/progress"}[progress], func(t *testing.T) {
+				client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+					var request struct {
+						ID uint64 `json:"id"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+						return
+					}
+					if progress {
+						global := make([]byte, 113)
+						copy(global, globalDiscriminator[:])
+						testutil.RPCReply(t, w, request.ID, []any{tc.account, testutil.EncodedAccount(global, solana.PumpProgramID)})
+					} else {
+						testutil.RPCReply(t, w, request.ID, tc.account)
+					}
+				}, nil)
+				var err error
+				if progress {
+					_, err = client.GetGraduationProgress(t.Context(), testMint)
+				} else {
+					_, err = client.GetBondingCurve(t.Context(), testMint)
+				}
+				var typed *errs.Error
+				if !errors.Is(err, tc.want) || !errors.As(err, &typed) || tc.want == errs.ErrNotFound && typed.Message != "No bonding curve exists for this mint." {
+					t.Fatalf("error = %v, want kind = %v", err, tc.want)
+				}
+			})
+		}
 	}
 }
 
