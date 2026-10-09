@@ -91,3 +91,47 @@ func TestVersionFlag(t *testing.T) {
 		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
 	}
 }
+
+func TestRejectLimitZeroAndOutOfRange(t *testing.T) {
+	isolatedEnv(t)
+	const testMint = "A13oRB9FFaiUjfi6LdCg6p9ka1u8SfGkUFs4SKvPpump"
+	tests := []struct {
+		name    string
+		args    []string
+		message string
+	}{
+		{name: "coins new limit 0", args: []string{"coins", "new", "--limit", "0"}, message: "Use a limit from 1 to 100"},
+		{name: "coins new limit -1", args: []string{"coins", "new", "--limit", "-1"}, message: "Use a limit from 1 to 100"},
+		{name: "coins new limit 101", args: []string{"coins", "new", "--limit", "101"}, message: "Use a limit from 1 to 100"},
+		{name: "coins new offset -1", args: []string{"coins", "new", "--offset", "-1"}, message: "Use a limit from 1 to 100 and an offset from 0 to 1000000."},
+		{name: "coins new offset 1000001", args: []string{"coins", "new", "--offset", "1000001"}, message: "Use a limit from 1 to 100 and an offset from 0 to 1000000."},
+		{name: "coins trending limit 0", args: []string{"coins", "trending", "--limit", "0"}, message: "Use a limit from 1 to 100"},
+		{name: "coins graduated limit 0", args: []string{"coins", "graduated", "--limit", "0"}, message: "Use a limit from 1 to 100"},
+		{name: "coins created limit 0", args: []string{"coins", "created", testMint, "--limit", "0"}, message: "Use a limit from 1 to 100"},
+		{name: "search limit 0", args: []string{"search", "pepe", "--limit", "0"}, message: "Use a limit from 1 to 100"},
+		{name: "trades limit 0", args: []string{"trades", testMint, "--limit", "0"}, message: "Use a limit from 1 to 100 and a cursor with at most 4096 bytes."},
+		{name: "trades limit -1", args: []string{"trades", testMint, "--limit", "-1"}, message: "Use a limit from 1 to 100 and a cursor with at most 4096 bytes."},
+		{name: "trades limit 101", args: []string{"trades", testMint, "--limit", "101"}, message: "Use a limit from 1 to 100 and a cursor with at most 4096 bytes."},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Execute(context.Background(), tc.args, &stdout, &stderr)
+			if code != 1 {
+				t.Fatalf("expected exit code 1, got %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected empty stdout, got %q", stdout.String())
+			}
+			var record map[string]any
+			if err := json.Unmarshal(stderr.Bytes(), &record); err != nil {
+				t.Fatalf("stderr not valid JSON: %s", stderr.String())
+			}
+			msg, _ := record["error"].(string)
+			if !strings.Contains(msg, tc.message) {
+				t.Fatalf("expected error message to contain %q, got %q", tc.message, msg)
+			}
+		})
+	}
+}

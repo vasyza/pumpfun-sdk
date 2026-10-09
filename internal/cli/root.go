@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 	pumpfun "github.com/vasyza/pumpfun-sdk"
 	"github.com/vasyza/pumpfun-sdk/internal/config"
+	"github.com/vasyza/pumpfun-sdk/internal/errs"
 	"github.com/vasyza/pumpfun-sdk/internal/logging"
 	mcpserver "github.com/vasyza/pumpfun-sdk/internal/mcp"
 )
@@ -202,12 +203,25 @@ func (a *app) coinCommand() *cobra.Command {
 	return cmd
 }
 
+func validatePageOptions(opts pumpfun.PageOptions) error {
+	if opts.Limit < 1 || opts.Limit > 100 || opts.Offset < 0 || opts.Offset > 1_000_000 {
+		return errs.Invalid("pagination", "Use a limit from 1 to 100 and an offset from 0 to 1000000.")
+	}
+	return nil
+}
+
+func validateTradeOptions(opts pumpfun.TradeOptions) error {
+	if opts.Limit < 1 || opts.Limit > 100 || len(opts.Cursor) > 4096 {
+		return errs.Invalid("get_trades", "Use a limit from 1 to 100 and a cursor with at most 4096 bytes.")
+	}
+	return nil
+}
+
 func pageFlags(cmd *cobra.Command, options *pumpfun.PageOptions) {
 	cmd.Flags().IntVar(&options.Limit, "limit", 20, "Read at most this many items, from 1 to 100.")
 	cmd.Flags().IntVar(&options.Offset, "offset", 0, "Skip this many items, from 0 to 1000000.")
 	cmd.Flags().BoolVar(&options.IncludeNSFW, "include-nsfw", false, "Include content marked NSFW.")
 }
-
 func (a *app) coinsCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "coins", Short: "Read coin lists.", Long: "Read a coin page. Use the next offset to read another page.", Example: "  pumpfun coins new --limit 10"}
 	for _, sub := range []struct {
@@ -229,6 +243,9 @@ func (a *app) coinsCommand() *cobra.Command {
 		child := &cobra.Command{Use: sub.name, Short: sub.short, Long: sub.long, Example: "  pumpfun coins " + sub.name + " --limit 10 --output json", Args: cobra.NoArgs}
 		pageFlags(child, &options)
 		child.RunE = a.read(func(cmd *cobra.Command, c *pumpfun.Client, _ []string) (any, error) {
+			if err := validatePageOptions(options); err != nil {
+				return nil, err
+			}
 			return read(cmd.Context(), c, options)
 		})
 		cmd.AddCommand(child)
@@ -237,6 +254,9 @@ func (a *app) coinsCommand() *cobra.Command {
 	created := &cobra.Command{Use: "created ADDRESS", Short: "List coins by creator.", Long: "Read coins created by a Solana address.", Example: "  pumpfun coins created ADDRESS --output json", Args: oneArg("creator address")}
 	pageFlags(created, &options)
 	created.RunE = a.read(func(cmd *cobra.Command, c *pumpfun.Client, args []string) (any, error) {
+		if err := validatePageOptions(options); err != nil {
+			return nil, err
+		}
 		return c.ListCreatedCoins(cmd.Context(), args[0], options)
 	})
 	cmd.AddCommand(created)
@@ -248,6 +268,9 @@ func (a *app) searchCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "search QUERY", Short: "Find coins.", Long: "Find Solana coins by name, symbol, or mint. Skip results from other chains. Use next_offset to read the next source page.", Example: "  pumpfun search 'test coin' --output json", Args: oneArg("search text")}
 	pageFlags(cmd, &options)
 	cmd.RunE = a.read(func(cmd *cobra.Command, c *pumpfun.Client, args []string) (any, error) {
+		if err := validatePageOptions(options); err != nil {
+			return nil, err
+		}
 		return c.Search(cmd.Context(), args[0], options)
 	})
 	return cmd
@@ -259,6 +282,9 @@ func (a *app) tradesCommand() *cobra.Command {
 	cmd.Flags().IntVar(&options.Limit, "limit", 20, "Read at most this many trades, from 1 to 100.")
 	cmd.Flags().StringVar(&options.Cursor, "cursor", "", "Use the cursor from the previous trade page.")
 	cmd.RunE = a.read(func(cmd *cobra.Command, c *pumpfun.Client, args []string) (any, error) {
+		if err := validateTradeOptions(options); err != nil {
+			return nil, err
+		}
 		return c.GetTrades(cmd.Context(), args[0], options)
 	})
 	return cmd
