@@ -216,11 +216,5 @@ func (c *Service) ListCreatedCoins(ctx context.Context, address string, opts Pag
 	}
 	page := newPage(wire.Coins, opts)
 	page.Total = &wire.Count
-	page.HasMore = opts.Offset+len(wire.Coins) < wire.Count && len(wire.Coins) > 0
-	page.NextOffset = nil
-	if page.HasMore {
-		next := opts.Offset + len(wire.Coins)
-		page.NextOffset = &next
-	}
 	return page, nil
 }

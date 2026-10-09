@@ -102,3 +102,45 @@ func TestFacadeCoinsPaginationShortPage(t *testing.T) {
 		t.Fatalf("expected HasMore=false and NextOffset=nil, got %+v", page2)
 	}
 }
+
+func TestFacadeCreatedCoinsPaginationEmptyPage(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/coins-v2/user-created-coins/2wjsP4wEovqK8WGK8c4y9UXbkPJqMc7g6BhoRJQHjvJw" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("limit") != "100" {
+			t.Errorf("expected limit=100, got %s", q.Get("limit"))
+		}
+		switch q.Get("offset") {
+		case "0":
+			_, _ = w.Write([]byte(`{"coins":[{"mint":"DZQPU9RmUyCSyUMmy611562SJToJknBzQSg2pGqapump","name":"Coin 1"}],"count":1}`))
+		case "1":
+			_, _ = w.Write([]byte(`{"coins":[],"count":1}`))
+		default:
+			t.Errorf("unexpected offset: %s", q.Get("offset"))
+		}
+	}))
+	defer upstream.Close()
+
+	sdk, err := pumpfun.NewClient(pumpfun.Options{APIBaseURL: upstream.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	page1, err := sdk.ListCreatedCoins(context.Background(), "2wjsP4wEovqK8WGK8c4y9UXbkPJqMc7g6BhoRJQHjvJw", pumpfun.PageOptions{Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page1.HasMore || page1.NextOffset == nil || *page1.NextOffset != 1 {
+		t.Fatalf("expected HasMore=true and NextOffset=1, got %+v", page1)
+	}
+
+	page2, err := sdk.ListCreatedCoins(context.Background(), "2wjsP4wEovqK8WGK8c4y9UXbkPJqMc7g6BhoRJQHjvJw", pumpfun.PageOptions{Limit: 100, Offset: *page1.NextOffset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page2.HasMore || page2.NextOffset != nil {
+		t.Fatalf("expected HasMore=false and NextOffset=nil, got %+v", page2)
+	}
+}

@@ -295,3 +295,45 @@ func TestNewPage(t *testing.T) {
 		t.Fatalf("p3 = %+v", p3)
 	}
 }
+
+func TestCreatedCoinsPaginationEmptyPageRule(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch q.Get("offset") {
+		case "0":
+			testutil.WriteJSON(t, w, map[string]any{
+				"coins": []Coin{{Mint: testMint, Name: "Coin 1"}},
+				"count": 1,
+			})
+		case "1":
+			testutil.WriteJSON(t, w, map[string]any{
+				"coins": []Coin{},
+				"count": 1,
+			})
+		default:
+			t.Errorf("unexpected offset: %s", q.Get("offset"))
+		}
+	}, nil)
+
+	page1, err := client.ListCreatedCoins(context.Background(), testCreator, PageOptions{Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page1.Items) != 1 || !page1.HasMore || page1.NextOffset == nil || *page1.NextOffset != 1 {
+		t.Fatalf("expected HasMore=true and NextOffset=1 on non-empty page, got %+v", page1)
+	}
+	if page1.Total == nil || *page1.Total != 1 {
+		t.Fatalf("expected Total=1, got %v", page1.Total)
+	}
+
+	page2, err := client.ListCreatedCoins(context.Background(), testCreator, PageOptions{Limit: 100, Offset: *page1.NextOffset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2.Items) != 0 || page2.HasMore || page2.NextOffset != nil {
+		t.Fatalf("expected HasMore=false and NextOffset=nil on empty page, got %+v", page2)
+	}
+	if page2.Total == nil || *page2.Total != 1 {
+		t.Fatalf("expected Total=1, got %v", page2.Total)
+	}
+}
