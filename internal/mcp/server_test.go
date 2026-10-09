@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -140,6 +141,28 @@ func TestStructuredSuccessAndErrors(t *testing.T) {
 	}
 	if upstreamCalls.Load() != 2 {
 		t.Fatalf("upstream calls = %d", upstreamCalls.Load())
+	}
+}
+
+func TestObserveTradesReturnsMissingKeyError(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	server := testServer(t, func(http.ResponseWriter, *http.Request) { upstreamCalls.Add(1) })
+	response := wireCall(t, HTTPHandler(server, zerolog.Nop()), "tools/call", map[string]any{
+		"name": "observe_trades", "arguments": map[string]any{"mints": []string{mint}, "seconds": 1},
+	})
+	var reply struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content struct {
+				Error *ToolError `json:"error"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &reply); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || !reply.Result.IsError || reply.Result.Content.Error == nil || reply.Result.Content.Error.Kind != "unauthorized" || !strings.Contains(reply.Result.Content.Error.Message, "api-key") || upstreamCalls.Load() != 0 {
+		t.Fatalf("upstream calls = %d, result = %s", upstreamCalls.Load(), response.Body)
 	}
 }
 

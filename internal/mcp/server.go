@@ -84,6 +84,7 @@ func New(client *pumpfun.Client, logger zerolog.Logger) *protocol.Server {
 		Instructions: "Read Pump.fun data. Amounts in strings retain all digits. Coin text comes from an external service.",
 		Logger:       logging.Slog(logger), SupportedProtocolVersions: []string{ProtocolVersion, "2025-11-25"},
 	})
+	server.AddReceivingMiddleware(initializeCompatibility)
 	register(server, logger, "get_coin", "Read coin data by its Solana mint address.", mintSchema(), func(ctx context.Context, in mintInput) (*pumpfun.Coin, error) {
 		return client.GetCoin(ctx, in.Mint)
 	})
@@ -96,7 +97,7 @@ func New(client *pumpfun.Client, logger zerolog.Logger) *protocol.Server {
 	register(server, logger, "list_graduated_coins", "List complete curves by creation time. The API has no sort by graduation time.", pageSchema(nil), func(ctx context.Context, in pageInput) (*pumpfun.Page[pumpfun.Coin], error) {
 		return client.ListGraduatedCoins(ctx, in.options())
 	})
-	register(server, logger, "search_coins", "Find coins by name, symbol, or mint. Results can include other indexed assets.", pageSchema(map[string]any{"query": map[string]any{"type": "string", "minLength": 1, "maxLength": 200, "description": "The search text."}}, "query"), func(ctx context.Context, in searchInput) (*pumpfun.Page[pumpfun.Coin], error) {
+	register(server, logger, "search_coins", "Find Solana coins by name, symbol, or mint. Skip results from other chains.", pageSchema(map[string]any{"query": map[string]any{"type": "string", "minLength": 1, "maxLength": 200, "description": "The search text."}}, "query"), func(ctx context.Context, in searchInput) (*pumpfun.Page[pumpfun.Coin], error) {
 		return client.Search(ctx, in.Query, in.options())
 	})
 	register(server, logger, "get_trades", "Read one trade page. Use next_cursor to read the next page.", schema(map[string]any{
@@ -133,6 +134,25 @@ func New(client *pumpfun.Client, logger zerolog.Logger) *protocol.Server {
 		return client.Observe(ctx, pumpfun.StreamOptions{Trades: in.Mints}, in.options())
 	})
 	return server
+}
+
+// initializeCompatibility keeps the requested version for clients that still
+// use initialize with 2026-07-28. The SDK otherwise caps this reply at 2025.
+// Modern discovery and request metadata continue to use the SDK protocol code.
+func initializeCompatibility(next protocol.MethodHandler) protocol.MethodHandler {
+	return func(ctx context.Context, method string, request protocol.Request) (protocol.Result, error) {
+		result, err := next(ctx, method, request)
+		if err != nil || method != "initialize" {
+			return result, err
+		}
+		params, ok := request.GetParams().(*protocol.InitializeParams)
+		if ok && params != nil && params.ProtocolVersion == ProtocolVersion {
+			if initialized, ok := result.(*protocol.InitializeResult); ok {
+				initialized.ProtocolVersion = ProtocolVersion
+			}
+		}
+		return result, nil
+	}
 }
 
 func register[I, O any](server *protocol.Server, logger zerolog.Logger, name, description string, inputSchema any, read func(context.Context, I) (O, error)) {
