@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,6 +71,9 @@ func (c *Service) Stream(ctx context.Context, opts StreamOptions, handler EventH
 		if err := solana.ValidateAddress(mint); err != nil {
 			return err
 		}
+	}
+	if len(opts.Trades) > 0 && missingPumpPortalKey(c.transport.WSURL()) {
+		return &errs.Error{Kind: errs.KindUnauthorized, Operation: "stream", Message: "Trade streams require a PumpPortal API key. Set ws_url to a PumpPortal URL with api-key."}
 	}
 	if !c.streaming.CompareAndSwap(false, true) {
 		return &errs.Error{Kind: errs.KindStreamActive, Operation: "stream", Message: errs.ErrStreamActive.Message}
@@ -198,11 +203,16 @@ func (c *Service) streamConnection(ctx context.Context, opts StreamOptions, hand
 		if err := json.Unmarshal(data, &envelope); err != nil {
 			return delivered, false, errs.Decode("stream", err)
 		}
-		if hasServiceError(envelope.Errors) || hasServiceError(envelope.Error) {
-			return delivered, false, &errs.Error{Kind: errs.KindUnauthorized, Operation: "stream", Message: "The stream service did not accept the subscription. Check its API key and account balance."}
+		if hasServiceError(envelope.Errors) || hasServiceError(envelope.Error) || strings.EqualFold(envelope.Type, "error") {
+			return delivered, false, subscriptionError()
 		}
-		if envelope.Type == "" && envelope.Message != "" {
-			continue
+		if envelope.Message != "" {
+			if !subscriptionAcknowledged(envelope.Message) {
+				return delivered, false, subscriptionError()
+			}
+			if envelope.Type == "" {
+				continue
+			}
 		}
 		event := envelope.StreamEvent
 		if err := solana.ValidateAddress(event.Mint); err != nil || event.Type == "" {
@@ -220,6 +230,21 @@ func (c *Service) streamConnection(ctx context.Context, opts StreamOptions, hand
 		}
 		delivered = true
 	}
+}
+
+func missingPumpPortalKey(rawURL string) bool {
+	endpoint, _ := url.Parse(rawURL) // New checks the URL before it creates a service.
+	host := strings.TrimSuffix(strings.ToLower(endpoint.Hostname()), ".")
+	return (host == "pumpportal.fun" || strings.HasSuffix(host, ".pumpportal.fun")) && strings.TrimSpace(endpoint.Query().Get("api-key")) == ""
+}
+
+func subscriptionAcknowledged(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	return message == "successfully subscribed." || message == "successfully subscribed" || strings.HasPrefix(message, "successfully subscribed to ") || strings.HasPrefix(message, "subscribed to ")
+}
+
+func subscriptionError() error {
+	return &errs.Error{Kind: errs.KindUnauthorized, Operation: "stream", Message: "The stream service did not accept the subscription. Check ws_url, its API key, and the account balance."}
 }
 
 func hasServiceError(data json.RawMessage) bool {

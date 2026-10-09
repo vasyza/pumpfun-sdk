@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -146,19 +147,70 @@ func TestStreamReconnectAndHandlerStop(t *testing.T) {
 }
 
 func TestStreamServiceError(t *testing.T) {
-	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-		_, _, _ = conn.Read(r.Context())
-		_ = conn.Write(r.Context(), websocket.MessageText, []byte(`{"errors":["API key secret"]}`))
-		_, _, _ = conn.Read(r.Context())
-	}, nil)
-	err := client.StreamNewCoins(context.Background(), func(context.Context, StreamEvent) error { return nil })
-	if !errors.Is(err, errs.ErrUnauthorized) {
-		t.Fatal(err)
+	for _, payload := range []string{
+		`{"errors":["API key secret"]}`,
+		`{"error":"Invalid API key secret"}`,
+		`{"message":"Please provide an API key: secret"}`,
+		`{"message":"Insufficient account balance: secret"}`,
+		`{"message":"Rate limit exceeded: secret"}`,
+		`{"message":"Invalid subscription method: secret"}`,
+		`{"txType":"error","message":"API key secret is not valid"}`,
+		`{"txType":"error"}`,
+		`{"txType":"buy","mint":"` + testMint + `","message":"API key secret is not valid"}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			var connections atomic.Int32
+			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				connections.Add(1)
+				conn, err := websocket.Accept(w, r, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer func() { _ = conn.CloseNow() }()
+				_, _, _ = conn.Read(r.Context())
+				_ = conn.Write(r.Context(), websocket.MessageText, []byte(payload))
+				_, _, _ = conn.Read(r.Context())
+			}, func(o *Options) { o.Retry.MaxRetries = 3 })
+			_, err := client.Observe(t.Context(), StreamOptions{Trades: []string{testMint}}, ObserveOptions{Duration: time.Second})
+			if !errors.Is(err, errs.ErrUnauthorized) || strings.Contains(err.Error(), "secret") || !strings.Contains(err.Error(), "API key") || connections.Load() != 1 {
+				t.Fatalf("connections = %d, error = %v", connections.Load(), err)
+			}
+		})
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPumpPortalTradesNeedKeyBeforeNetworkAccess(t *testing.T) {
+	for _, endpoint := range []string{
+		transport.DefaultWSURL,
+		transport.DefaultWSURL + "?api-key=",
+		transport.DefaultWSURL + "?api-key=%20",
+		"wss://PUMPPORTAL.FUN./api/data",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			var calls atomic.Int32
+			client := testClient(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected local request") }, func(o *Options) {
+				o.WSURL = endpoint
+				o.HTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					calls.Add(1)
+					return nil, errors.New("unexpected network request")
+				})}
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			_, err := client.Observe(ctx, StreamOptions{Trades: []string{testMint}}, ObserveOptions{Duration: time.Second})
+			if !errors.Is(err, errs.ErrUnauthorized) || !strings.Contains(err.Error(), "Set ws_url") || !strings.Contains(err.Error(), "api-key") || calls.Load() != 0 {
+				t.Fatalf("calls = %d, error = %v", calls.Load(), err)
+			}
+			// Free subscriptions do not require a key.
+			err = client.StreamNewCoins(ctx, func(context.Context, StreamEvent) error { return nil })
+			if errors.Is(err, errs.ErrUnauthorized) || calls.Load() != 1 {
+				t.Fatalf("free subscription calls = %d, error = %v", calls.Load(), err)
+			}
+		})
 	}
 }
