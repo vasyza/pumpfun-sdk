@@ -1,0 +1,8 @@
+{
+  "api_base_url": "https://frontend-api-v3.pump.fun",
+  "log_level": "warn",
+  "output": "json",
+  "rpc_url": "https://api.mainnet-beta.solana.com",
+  "timeout": "20s",
+  "ws_url": "wss://pumpportal.fun/api/data"
+}

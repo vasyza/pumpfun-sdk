@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "mint": "DZQPU9RmUyCSyUMmy611562SJToJknBzQSg2pGqapump",
+      "name": "Test Coin",
+      "symbol": "TEST",
+      "created_timestamp": 1000,
+      "complete": false,
+      "market_cap": 12.5,
+      "usd_market_cap": 1250,
+      "total_supply": "9007199254740993",
+      "base_decimals": 0,
+      "quote_decimals": 0,
+      "nsfw": false
+    }
+  ],
+  "offset": 0,
+  "limit": 1,
+  "has_more": true,
+  "next_offset": 1,
+  "order_by": "created_timestamp DESC"
+}

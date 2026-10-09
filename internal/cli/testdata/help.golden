@@ -1,0 +1,35 @@
+Read Pump.fun data through HTTP, WebSocket, and Solana RPC.
+Use a read command or start the MCP server.
+
+Use:
+  pumpfun [flags]
+
+Commands:
+  coin        Read one coin.
+  coins       Read coin lists.
+  config      Read or change settings.
+  creator     Read coin creator data.
+  curve       Read bonding curve state.
+  holders     Read the largest token accounts.
+  mcp         Run the MCP server.
+  progress    Read graduation progress.
+  search      Find coins.
+  stream      Read live events.
+  trades      Read coin trades.
+  user        Read a public user profile.
+
+Examples:
+  pumpfun coins new --output json
+  pumpfun config set timeout 30s
+  pumpfun mcp serve
+
+Flags:
+      --api-base-url string   Use this frontend API URL. (default "https://frontend-api-v3.pump.fun")
+      --config string         Use this config file.
+  -h, --help                  Show help for this command.
+      --log-level string      Set the log level: trace, debug, info, warn, error, or disabled. (default "warn")
+  -o, --output string         Set the output format: table, json, or yaml. (default "table")
+      --rpc-url string        Use this Solana RPC URL. (default "https://api.mainnet-beta.solana.com")
+      --timeout string        Limit each read to this duration, such as 20s. (default "20s")
+      --version               Show the program version.
+      --ws-url string         Use this PumpPortal WebSocket URL. (default "wss://pumpportal.fun/api/data")
