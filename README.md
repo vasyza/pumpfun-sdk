@@ -5,6 +5,78 @@ The module path is `github.com/vasyza/pumpfun-sdk`.
 Use Go 1.27.1.
 An older Go installation can download it with `GOTOOLCHAIN=auto`.
 
+## Install
+
+You need Go 1.27.1 or later.
+An older Go installation can download Go 1.27.1 with `GOTOOLCHAIN=auto`.
+
+### Install the CLI
+
+Run this command:
+
+```sh
+GOTOOLCHAIN=auto go install github.com/vasyza/pumpfun-sdk/cmd/pumpfun@latest
+```
+
+Go puts the `pumpfun` command in `$(go env GOPATH)/bin`.
+Add this directory to your `PATH`.
+Make sure that the command works:
+
+```sh
+pumpfun --help
+```
+
+### Add the SDK to a Go project
+
+Run this command in your project directory:
+
+```sh
+go get github.com/vasyza/pumpfun-sdk@latest
+```
+
+Import the package:
+
+```go
+import pumpfun "github.com/vasyza/pumpfun-sdk"
+```
+
+### Build from source
+
+```sh
+git clone https://github.com/vasyza/pumpfun-sdk.git
+cd pumpfun-sdk
+GOTOOLCHAIN=auto make build
+./bin/pumpfun --help
+```
+
+### Set a private Solana RPC
+
+The default Solana RPC is a public service with low rate limits.
+Some commands, for example `holders`, need a private RPC.
+Set your RPC URL one time:
+
+```sh
+pumpfun config set rpc_url "https://YOUR-RPC-PROVIDER/?api-key=YOUR_KEY"
+```
+
+You can also use the `PUMPFUN_RPC_URL` environment variable or the `--rpc-url` flag.
+Do not put API keys in files that you commit.
+
+### Add the MCP server to an MCP client
+
+Use this command as a stdio server:
+
+```json
+{
+  "mcpServers": {
+    "pumpfun": {
+      "command": "pumpfun",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
 ## Build and check
 
 Run these commands from the project directory:
