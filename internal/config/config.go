@@ -76,7 +76,7 @@ func (s Store) Read() (map[string]string, error) {
 	if err != nil {
 		return nil, errors.New("the config file could not be opened")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, 64*1024+1))
 	if err != nil || len(data) > 64*1024 {
 		return nil, errors.New("the config file could not be read or exceeds 64 KiB")
@@ -202,7 +202,7 @@ func (s Store) update(ctx context.Context, key string, value *string) error {
 		return errors.New("the config directory could not be created")
 	}
 	lock := flock.New(s.Path + ".lock")
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	lockCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	locked, err := lock.TryLockContext(lockCtx, 25*time.Millisecond)
@@ -226,8 +226,8 @@ func (s Store) update(ctx context.Context, key string, value *string) error {
 	if err != nil {
 		return errors.New("a temporary config file could not be created")
 	}
-	defer os.Remove(temp.Name())
-	defer temp.Close()
+	defer func() { _ = os.Remove(temp.Name()) }()
+	defer func() { _ = temp.Close() }()
 	if _, err := temp.Write(data); err != nil {
 		return errors.New("the config data could not be written")
 	}
