@@ -37,7 +37,7 @@ func assertInitialize(t *testing.T, data []byte, version string) {
 	if err := json.Unmarshal(data, &reply); err != nil {
 		t.Fatal(err)
 	}
-	if reply.Result == nil || reply.Result.ProtocolVersion != version || reply.Result.Capabilities.Tools == nil || reply.Result.ServerInfo.Name != "pumpfun" || len(reply.Error) != 0 {
+	if reply.Result == nil || reply.Result.ProtocolVersion != version || reply.Result.Capabilities.Tools == nil || reply.Result.ServerInfo.Name != "pumpfun" || reply.Result.ServerInfo.Version != "1.0.0" || len(reply.Error) != 0 {
 		t.Fatalf("initialize reply = %s", data)
 	}
 }

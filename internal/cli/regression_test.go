@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -79,5 +80,14 @@ func TestSDKErrorGuidanceFromCLI(t *testing.T) {
 	}
 	if rpcCalls.Load() != 2 {
 		t.Fatalf("RPC calls = %d", rpcCalls.Load())
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	isolatedEnv(t)
+	var stdout, stderr bytes.Buffer
+	code := Execute(context.Background(), []string{"--version"}, &stdout, &stderr)
+	if code != 0 || stdout.String() != "1.0.0\n" || stderr.Len() != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
 	}
 }

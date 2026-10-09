@@ -25,7 +25,7 @@ const (
 	DefaultRPCURL     = "https://api.mainnet-beta.solana.com"
 	DefaultWSURL      = "wss://pumpportal.fun/api/data"
 	DefaultTimeout    = 20 * time.Second
-	Version           = "0.1.0"
+	Version           = "1.0.0"
 )
 
 // RetryPolicy limits retries for temporary HTTP and WebSocket failures.
