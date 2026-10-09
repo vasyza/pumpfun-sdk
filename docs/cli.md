@@ -19,7 +19,7 @@ Replace `MINT`, `ADDRESS`, and `QUERY` with your values.
 | `pumpfun holders MINT` | At most 20 largest token accounts and their owners. |
 | `pumpfun creator MINT` | Creator address and an optional public profile. |
 | `pumpfun user ADDRESS` | A public profile. |
-| `pumpfun search QUERY` | A page of search results. |
+| `pumpfun search QUERY` | A page of Solana search results. |
 
 Every read command accepts `--output json` and `--output yaml`.
 The default output is a table.
@@ -45,6 +45,11 @@ Coin lists and search accept these flags:
 Copy `next_offset` from JSON output into the next command.
 An absent next offset means that the page is complete.
 A full page can have an empty next page.
+Search skips results from other chains.
+Its JSON and YAML output reports `skipped_non_solana` when entries are skipped.
+Search offsets count all source entries, including skipped entries.
+A search page can have no coins and still have `next_offset`.
+Use that offset to continue the search.
 
 ```sh
 pumpfun coins new --limit 10 --offset 0 --output json
@@ -64,7 +69,27 @@ Lists can change between reads.
 Offset pages are not a fixed snapshot.
 The graduated list uses creation time because the API has no sort by graduation time.
 The trending list uses a market cap ranking.
-Search can include other assets that Pump.fun indexes.
+
+## RPC errors
+
+Holder reads use `getTokenLargestAccounts` on Solana RPC.
+The shared public RPC can return HTTP 429 or a JSON-RPC rate limit error.
+The SDK retries these errors with backoff and respects `Retry-After`.
+If the retries fail, the error tells you to set `rpc_url` to a private RPC.
+The client also returns that error if the requested wait exceeds its retry policy.
+
+```sh
+pumpfun config set rpc_url 'https://YOUR_RPC_HOST'
+pumpfun holders MINT --output json
+```
+
+Replace `YOUR_RPC_HOST` with your private mainnet RPC host.
+You can also use `--rpc-url URL` or `PUMPFUN_RPC_URL`.
+See [RPC rate limits](config.md#rpc-rate-limits) for setting priority and API keys.
+
+If the mint has no bonding curve, `curve` returns a `not_found` error:
+`No bonding curve exists for this mint.`
+The `progress` command uses the same check.
 
 ## Event streams
 
@@ -78,6 +103,11 @@ Supply one or more mints to `stream trades`.
 The client puts them on one connection.
 The maximum is 100 mints.
 PumpPortal requires an API key and can charge for trade events.
+Supply the key in `ws_url` with the `api-key` query name.
+Without this key, `stream trades` returns an error before it connects.
+The client stops if the socket sends a subscription error.
+Check the key and linked wallet balance if that error occurs.
+See [service API keys](config.md#service-api-keys).
 See the [endpoint sources](endpoints.md#pumpportal).
 
 `--count` stops after the selected number of events.

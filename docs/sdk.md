@@ -108,6 +108,11 @@ The maximum offset is 1000000.
 A full page means that another page can exist.
 It does not prove that another page has items.
 List changes can move items between offset pages.
+Search retains Solana coins and skips entries from other chains.
+`Page.SkippedNonSolana` gives the number of skipped entries.
+`HasMore` and `NextOffset` use the full source row count.
+An empty search page can therefore have a next offset.
+Use `NextOffset` instead of adding the returned item count to your offset.
 
 Trade pages use `TradeOptions{Limit, Cursor}`.
 Copy `TradePage.NextCursor` into the next request.
@@ -127,6 +132,9 @@ The zero quote mint identifies native SOL.
 The decoder supports the old core layout and the current appended fields.
 It checks the discriminator and boolean fields.
 RPC reads also check the account owner.
+If the derived address has no bonding curve state, the read returns `ErrNotFound`.
+Its message is `No bonding curve exists for this mint.`
+Invalid RPC encoding or damaged curve data still returns `ErrDecode`.
 
 Progress reads the curve and Global account in one confirmed snapshot.
 The estimate is:
@@ -173,6 +181,10 @@ An error from the handler stops the stream without a retry.
 The handler must finish promptly and check its context during long work.
 
 PumpPortal can charge for trade subscriptions.
+PumpPortal trade subscriptions require a non-empty `api-key` query value in `WSURL`.
+A missing key returns `ErrUnauthorized` before the client connects.
+Socket subscription errors also stop the stream with a safe error message.
+This check also applies to `Observe` with trade mints.
 The client can connect again after a temporary failure.
 It does not provide a replay guarantee.
 Use event signatures to remove duplicates when required.
@@ -212,7 +224,10 @@ if errors.Is(err, context.DeadlineExceeded) {
 `Error` has a kind, operation, safe message, HTTP status, RPC code, and optional retry delay.
 It wraps cancellation and timeout causes.
 SDK errors do not expose service response bodies in their messages.
-RPC application errors are returned as `KindRPC`.
+RPC application errors use `KindRPC`, except for rate limit errors.
+RPC rate limit errors use `KindRateLimited` and retain the RPC code.
+Their message tells CLI users to set `rpc_url` to a private RPC.
+SDK users can supply a private mainnet endpoint in `Options.RPCURL`.
 
 The default timeout is 20 seconds.
 It includes rate limit waits and HTTP retries.
@@ -226,11 +241,14 @@ The limiter is shared by the client's HTTP, RPC, and WebSocket connection reques
 
 The default policy permits three extra attempts.
 It retries transport failures and HTTP 408, 429, 500, 502, 503, and 504.
+It also retries JSON-RPC rate limit errors, including errors in HTTP 200 responses.
+HTTP and RPC rate limit errors use the same retry budget.
 HTTP retry waits use exponential backoff and jitter.
 The initial backoff is 200 milliseconds.
 The maximum backoff is five seconds.
 The client does not shorten a server `Retry-After` value.
-If it exceeds the retry budget, the client returns the typed error.
+If it exceeds `RetryPolicy.MaxBackoff`, the client returns the typed error.
+It also returns the last typed error when no retry attempts remain.
 To disable retries, use `Retry: &pumpfun.RetryPolicy{MaxRetries: 0}`.
 
 The default response limit is 8 MiB.

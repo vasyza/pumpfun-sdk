@@ -131,11 +131,22 @@ Use migration events to observe new migrations.
 
 Holder data covers at most 20 token accounts.
 It is not a full holder list.
+The shared public RPC can limit these reads.
+The SDK retries HTTP and RPC rate limit errors.
+Set `rpc_url` to a private mainnet RPC if the limit continues.
+See [RPC configuration](docs/config.md#rpc-rate-limits).
 Progress is an estimate from current Global reserves.
 A complete curve can await pool migration.
+An absent bonding curve returns a typed `not_found` error.
+
+Search returns Solana coins and skips other chains.
+Its page offsets include skipped entries.
+Use `next_offset` to continue, including after an empty search page.
 
 PumpPortal can charge for trade events.
 Trade subscriptions require an API key and a funded linked wallet.
+Without the `api-key` URL value, trade streams return an error before they connect.
+The MCP `observe_trades` tool uses the same check.
 The SDK uses one active WebSocket connection per client.
 It cannot replay events lost during a connection failure.
 

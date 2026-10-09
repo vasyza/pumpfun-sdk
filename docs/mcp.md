@@ -57,6 +57,12 @@ Use stdio or a local HTTP client.
 
 Specification 2026-07-28 uses `server/discover` and request metadata.
 It does not require the old initialize handshake.
+For compatibility, a client can still send `initialize` without modern metadata.
+If it requests `2026-07-28`, the reply returns `2026-07-28` on stdio and HTTP.
+If it requests `2025-11-25`, the reply returns that older version.
+This compatibility check uses the successful SDK handshake result.
+The SDK continues to check capabilities and inputs.
+For later 2026 requests, use the modern metadata below.
 Each request has these required `_meta` keys:
 
 | Key | Value |
@@ -119,13 +125,21 @@ Trade event reads accept 1 to 100 unique Solana mints.
 The client permits one active event read at a time.
 
 PumpPortal can charge for trade events.
-Supply its API key through the shared `ws_url` setting when required.
+Supply its API key through the shared `ws_url` setting with the `api-key` query name.
+Without that key, `observe_trades` returns an `unauthorized` tool error before it connects.
+It also returns an error if PumpPortal rejects the subscription on the socket.
 See [configuration](config.md#service-api-keys).
 
 The trending tool uses a market cap ranking.
 The graduated tool sorts complete curves by creation time.
 The public API has no sort by graduation time.
 Holder data covers at most 20 token accounts.
+Set `rpc_url` to a private mainnet RPC if public holder reads reach a rate limit.
+The SDK retries HTTP and JSON-RPC rate limit errors under one budget.
+See [RPC rate limits](config.md#rpc-rate-limits).
+Search returns Solana coins and reports `skipped_non_solana` for other chains.
+Its offsets count source entries, so an empty page can have a next offset.
+An absent bonding curve returns `not_found` with `No bonding curve exists for this mint.`
 These limits are also stated in tool descriptions.
 
 ## Results and errors

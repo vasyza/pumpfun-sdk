@@ -97,6 +97,32 @@ A new config file has mode `0600` where the OS supports these modes.
 The lock file can remain after a write.
 The process releases the lock when it closes the file.
 
+## RPC rate limits
+
+The default Solana RPC is a shared public service.
+It can limit holder reads, including `getTokenLargestAccounts`.
+Use a private mainnet RPC for repeated reads.
+See the [Solana public RPC guide](https://solana.com/docs/references/clusters).
+
+The SDK retries HTTP 429 and JSON-RPC rate limit errors with backoff.
+Both errors use one retry budget and one timeout.
+The client respects `Retry-After`.
+If that delay exceeds the retry policy, it returns the rate limit error.
+It does not send an early retry.
+After the retry budget is used, the error tells you to set `rpc_url` to a private RPC.
+
+```sh
+pumpfun config set rpc_url 'https://YOUR_RPC_HOST'
+pumpfun holders MINT --output json
+```
+
+Replace `YOUR_RPC_HOST` with your provider's mainnet RPC host.
+Include its API key if the provider requires one.
+To use an environment value, set `PUMPFUN_RPC_URL`.
+To select one command's RPC, use `--rpc-url URL`.
+An environment value has priority over the file setting.
+An increased timeout does not remove a provider's rate limit.
+
 ## Service API keys
 
 Use an environment variable to supply a PumpPortal URL with an API key:
@@ -107,6 +133,12 @@ pumpfun stream trades MINT --duration 10s --output json
 ```
 
 Replace `API_KEY` with the service API key.
+PumpPortal trade streams require this query value before the client connects.
+A missing key returns an error immediately.
+The MCP `observe_trades` tool uses the same check.
+The client also stops when PumpPortal sends a subscription error.
+Check the key and linked wallet balance if that error occurs.
+New coin and migration streams do not require this key.
 This key is not a wallet private key.
 The project does not accept wallet private keys.
 The SDK does not log URLs, query parameters, or response bodies.

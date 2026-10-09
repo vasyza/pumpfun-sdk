@@ -27,6 +27,9 @@ Trade reads use the Solana mainnet chain ID:
 The API uses a cursor for trade pages.
 It uses offsets for coin pages.
 Search can return other assets that Pump.fun indexes.
+The [PEPE search response](https://frontend-api-v3.pump.fun/coins/search-v2?searchTerm=pepe&offset=0&limit=20&sort=market_cap&order=DESC&includeNsfw=false) includes Solana and Ethereum entries.
+The SDK skips non-Solana entries before it decodes Solana fields.
+Search offsets still count all source entries.
 
 The coin API permits these sort fields:
 `created_timestamp`, `market_cap`, `ath_market_cap`, `reply_count`, `last_reply`, and `last_trade_timestamp`.
@@ -47,6 +50,8 @@ Use the `api-key` query name when the service requires it.
 
 PumpPortal requests one connection for all subscriptions.
 Trade subscriptions require an API key and a funded linked wallet.
+The client checks the `api-key` query value before a trade connection.
+It stops when the socket rejects a subscription.
 The service states a charge of 0.01 SOL per 10000 trade events.
 Check the service terms before use.
 The SDK does not create a wallet or accept a private key.
@@ -86,6 +91,11 @@ See [Token-2022 extensions](https://www.solana-program.com/docs/token-2022).
 Holder reads use separate RPC calls.
 Their slots can differ.
 The result includes each slot and can include a closed account with no owner.
+The public RPC can limit these reads.
+Use a private mainnet RPC for repeated holder reads.
+See the [Solana public RPC guide](https://solana.com/docs/references/clusters).
+The client retries HTTP 429 and JSON-RPC rate limit errors with backoff.
+It respects `Retry-After` and returns an error when its retry budget is used.
 
 ## MCP protocol
 
@@ -93,3 +103,7 @@ The server uses the [official Go SDK v1.8.0](https://github.com/modelcontextprot
 This SDK supports specification 2026-07-28.
 See the [protocol specification](https://modelcontextprotocol.io/specification/2026-07-28) and [tool specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 The SDK handles request metadata, capability discovery, cancellation, and result types.
+The SDK [version negotiation code](https://github.com/modelcontextprotocol/go-sdk/blob/v1.8.0/mcp/shared.go) caps the old `initialize` reply at `2025-11-25`.
+This project adds compatibility for an `initialize` request with `2026-07-28`.
+Both stdio and HTTP return that requested version.
+Modern discovery and request checks continue to use the SDK.
