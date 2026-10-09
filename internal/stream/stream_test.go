@@ -50,7 +50,7 @@ func TestStreamSubscriptionsAndObservation(t *testing.T) {
 			}
 		}
 		for _, data := range []string{
-			`{"message":"Successfully subscribed."}`,
+			`{"message":"Successfully subscribed.","errors":[],"error":null}`,
 			`{"txType":"create","mint":"` + testMint + `","name":"Test"}`,
 			`{"txType":"buy","mint":"` + testMint + `","solAmount":0.123456789,"tokenAmount":9007199254740993}`,
 		} {

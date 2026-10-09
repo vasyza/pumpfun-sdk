@@ -198,7 +198,7 @@ func (c *Service) streamConnection(ctx context.Context, opts StreamOptions, hand
 		if err := json.Unmarshal(data, &envelope); err != nil {
 			return delivered, false, errs.Decode("stream", err)
 		}
-		if len(envelope.Errors) > 0 || len(envelope.Error) > 0 {
+		if hasServiceError(envelope.Errors) || hasServiceError(envelope.Error) {
 			return delivered, false, &errs.Error{Kind: errs.KindUnauthorized, Operation: "stream", Message: "The stream service did not accept the subscription. Check its API key and account balance."}
 		}
 		if envelope.Type == "" && envelope.Message != "" {
@@ -219,6 +219,30 @@ func (c *Service) streamConnection(ctx context.Context, opts StreamOptions, hand
 			return delivered, false, err
 		}
 		delivered = true
+	}
+}
+
+func hasServiceError(data json.RawMessage) bool {
+	if len(data) == 0 {
+		return false
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return true
+	}
+	switch value := value.(type) {
+	case nil:
+		return false
+	case []any:
+		return len(value) > 0
+	case map[string]any:
+		return len(value) > 0
+	case string:
+		return value != ""
+	case bool:
+		return value
+	default:
+		return true
 	}
 }
 

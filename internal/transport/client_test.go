@@ -3,6 +3,7 @@ package transport_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -116,5 +117,32 @@ func TestRateLimitAcrossGoroutines(t *testing.T) {
 	wg.Wait()
 	if len(times) != 3 || times[2].Sub(times[0]) < 65*time.Millisecond {
 		t.Fatalf("request times = %v", times)
+	}
+}
+
+func TestInterruptedResponseRetries(t *testing.T) {
+	var calls atomic.Int32
+	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			hijacker, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("The mock server cannot close a response early.")
+				return
+			}
+			conn, buffer, err := hijacker.Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_, _ = fmt.Fprint(buffer, "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n{\"mint\":")
+			_ = buffer.Flush()
+			return
+		}
+		testutil.WriteJSON(t, w, models.Coin{Mint: testMint})
+	}, func(o *Options) { o.Retry.MaxRetries = 1 })
+	coin, err := readCoin(client, t.Context(), testMint)
+	if err != nil || coin.Mint != testMint || calls.Load() != 2 {
+		t.Fatalf("coin = %+v, calls = %d, error = %v", coin, calls.Load(), err)
 	}
 }
