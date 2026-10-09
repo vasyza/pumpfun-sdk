@@ -22,7 +22,11 @@ const maxHTTPBodyBytes = 1 << 20
 
 // ServeStdio uses standard input and output for protocol messages only.
 func ServeStdio(ctx context.Context, server *protocol.Server) error {
-	return server.Run(ctx, &protocol.StdioTransport{MaxLineLength: 1 << 20})
+	err := server.Run(ctx, &protocol.StdioTransport{MaxLineLength: 1 << 20})
+	if err == nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // HTTPHandler provides stateless Streamable HTTP at /mcp.

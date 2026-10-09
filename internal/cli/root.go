@@ -130,7 +130,11 @@ Common flags:
 func Execute(ctx context.Context, args []string, out, errOut io.Writer) int {
 	root := NewRoot(out, errOut)
 	root.SetArgs(args)
-	if err := root.ExecuteContext(ctx); err != nil {
+	err := root.ExecuteContext(ctx)
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
 		logger := logging.New(errOut, zerolog.ErrorLevel)
 		logger.Error().Err(err).Msg("The command failed.")
 		if errors.Is(err, context.Canceled) {
@@ -427,7 +431,13 @@ func (a *app) mcpCommand() *cobra.Command {
 		if transport == "http" {
 			return mcpserver.ServeHTTP(cmd.Context(), server, listen, logger)
 		}
-		return mcpserver.ServeStdio(cmd.Context(), server)
+		if err := mcpserver.ServeStdio(cmd.Context(), server); err != nil {
+			return err
+		}
+		if cmd.Context().Err() != nil {
+			return cmd.Context().Err()
+		}
+		return nil
 	}
 	cmd.AddCommand(serve)
 	return cmd

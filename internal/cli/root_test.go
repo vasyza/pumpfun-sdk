@@ -13,8 +13,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -254,7 +256,9 @@ func TestStdioProcessHelper(t *testing.T) {
 	if os.Getenv("PUMPFUN_MCP_TEST_PROCESS") != "1" {
 		return
 	}
-	code := Execute(context.Background(), []string{"--config", os.Getenv("PUMPFUN_MCP_TEST_CONFIG"), "mcp", "serve"}, os.Stdout, os.Stderr)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	code := Execute(ctx, []string{"--config", os.Getenv("PUMPFUN_MCP_TEST_CONFIG"), "mcp", "serve"}, os.Stdout, os.Stderr)
 	os.Exit(code)
 }
 
@@ -280,5 +284,74 @@ func TestMCPStdioListsTools(t *testing.T) {
 	list, err := session.ListTools(ctx, nil)
 	if err != nil || len(list.Tools) != 15 {
 		t.Fatalf("tools = %+v, err = %v", list, err)
+	}
+}
+
+func TestMCPStdioSIGINTExits130(t *testing.T) {
+	isolatedEnv(t)
+	for range 3 {
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStdioProcessHelper$")
+		command.Env = append(os.Environ(), "PUMPFUN_MCP_TEST_PROCESS=1", "PUMPFUN_MCP_TEST_CONFIG="+filepath.Join(t.TempDir(), "config.yaml"))
+		stdin, err := command.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr bytes.Buffer
+		command.Stdout = &stdout
+		command.Stderr = &stderr
+
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(200 * time.Millisecond)
+
+		if err := command.Process.Signal(os.Interrupt); err != nil {
+			t.Fatal(err)
+		}
+
+		err = command.Wait()
+		_ = stdin.Close()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("expected ExitError, got %v", err)
+		}
+		if exitErr.ExitCode() != 130 {
+			t.Fatalf("expected exit code 130, got %d (stderr: %s)", exitErr.ExitCode(), stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Fatalf("expected empty stdout, got %q", stdout.String())
+		}
+	}
+}
+
+func TestMCPStdioEOFExits0(t *testing.T) {
+	isolatedEnv(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStdioProcessHelper$")
+	command.Env = append(os.Environ(), "PUMPFUN_MCP_TEST_PROCESS=1", "PUMPFUN_MCP_TEST_CONFIG="+filepath.Join(t.TempDir(), "config.yaml"))
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	_ = stdin.Close()
+
+	if err := command.Wait(); err != nil {
+		t.Fatalf("expected exit code 0 on EOF, got err: %v (stderr: %s)", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
 }

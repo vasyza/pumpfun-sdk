@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/zerolog"
+	pumpfun "github.com/vasyza/pumpfun-sdk"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,10 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	protocol "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/rs/zerolog"
-	pumpfun "github.com/vasyza/pumpfun-sdk"
 )
 
 func initializeMessage(version string) map[string]any {
@@ -186,4 +186,17 @@ func TestInitializeStdioProcessHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+func TestServeStdioCanceledContext(t *testing.T) {
+	client, err := pumpfun.NewClient(pumpfun.Options{Logger: zerolog.Nop()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = ServeStdio(ctx, New(client, zerolog.Nop()))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
 }
