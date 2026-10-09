@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,54 @@ func TestCoinReadsAndPagination(t *testing.T) {
 			}
 			if !page.HasMore || page.NextOffset == nil || *page.NextOffset != 6 || page.OrderBy != read.sort {
 				t.Fatalf("page = %+v", page)
+			}
+		})
+	}
+}
+
+func TestSearchSkipsOtherChainsAndKeepsSourceOffsets(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/search-mixed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/coins/search-v2" || r.URL.Query().Get("searchTerm") != "pepe" {
+			t.Errorf("request = %s", r.URL)
+		}
+		switch r.URL.Query().Get("offset") {
+		case "4":
+			_, _ = w.Write(fixture)
+		case "8":
+			_, _ = io.WriteString(w, `[{"mint":"0x1"},{"mint":"0x2"},{"mint":"0x3"},{"mint":"0x4"}]`)
+		case "12":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			t.Errorf("offset = %s", r.URL.Query().Get("offset"))
+		}
+	}, nil)
+	page, err := client.Search(context.Background(), "pepe", PageOptions{Limit: 4, Offset: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.Items[0].Mint != testMint || page.Items[1].TotalSupply != "18446744073709551615" || page.SkippedNonSolana != 2 || !page.HasMore || page.NextOffset == nil || *page.NextOffset != 8 {
+		t.Fatalf("mixed page = %+v", page)
+	}
+	page, err = client.Search(context.Background(), "pepe", PageOptions{Limit: 4, Offset: *page.NextOffset})
+	if err != nil || page == nil || page.Items == nil || len(page.Items) != 0 || page.SkippedNonSolana != 4 || !page.HasMore || page.NextOffset == nil || *page.NextOffset != 12 {
+		t.Fatalf("other chain page = %+v, error = %v", page, err)
+	}
+	page, err = client.Search(context.Background(), "pepe", PageOptions{Limit: 4, Offset: *page.NextOffset})
+	if err != nil || page == nil || page.Items == nil || page.HasMore || page.NextOffset != nil || page.SkippedNonSolana != 0 {
+		t.Fatalf("last page = %+v, error = %v", page, err)
+	}
+}
+
+func TestSearchStillRejectsInvalidSolanaData(t *testing.T) {
+	for _, body := range []string{`null`, `{}`, `[{}]`, `[{"mint":"bad","chain_id":"solana"}]`, `[{"mint":"` + testMint + `","total_supply":"1.5"}]`} {
+		t.Run(body, func(t *testing.T) {
+			client := testClient(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, body) }, nil)
+			if _, err := client.Search(context.Background(), "pepe", PageOptions{}); !errors.Is(err, errs.ErrDecode) {
+				t.Fatalf("error = %v", err)
 			}
 		})
 	}

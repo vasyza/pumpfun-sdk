@@ -1,0 +1,27 @@
+[
+  {
+    "mint": "DZQPU9RmUyCSyUMmy611562SJToJknBzQSg2pGqapump",
+    "name": "Solana Pepe",
+    "symbol": "PEPE",
+    "chain_id": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "total_supply": 1000000000000000
+  },
+  {
+    "mint": "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+    "name": "Pepe",
+    "symbol": "PEPE",
+    "chain_id": "eip155:1",
+    "total_supply": 4.2069e32
+  },
+  {
+    "mint": "HKSXVMLXFe6vjNp9sxkiUDNtuSrWzjN4yDwFaRYn9FHj",
+    "name": "Other chain",
+    "chain_id": "eip155:1",
+    "total_supply": "1.5"
+  },
+  {
+    "mint": "11111111111111111111111111111111",
+    "name": "Solana asset",
+    "total_supply": "18446744073709551615"
+  }
+]

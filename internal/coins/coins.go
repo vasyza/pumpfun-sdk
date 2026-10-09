@@ -2,6 +2,7 @@ package coins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -43,19 +44,19 @@ func (c *Service) GetCoin(ctx context.Context, mint string) (*Coin, error) {
 
 // ListNewCoins lists coins by creation time, newest first.
 func (c *Service) ListNewCoins(ctx context.Context, opts PageOptions) (*Page[Coin], error) {
-	return c.listCoins(ctx, "list_new_coins", "/coins", "created_timestamp", opts, nil)
+	return c.listCoins(ctx, "list_new_coins", "/coins", "created_timestamp", opts, nil, false)
 }
 
 // ListTrendingCoins lists coins by market cap, highest first.
 // This is a public ranking proxy. It is not a Pump.fun trend score.
 func (c *Service) ListTrendingCoins(ctx context.Context, opts PageOptions) (*Page[Coin], error) {
-	return c.listCoins(ctx, "list_trending_coins", "/coins", "market_cap", opts, nil)
+	return c.listCoins(ctx, "list_trending_coins", "/coins", "market_cap", opts, nil, false)
 }
 
 // ListGraduatedCoins lists complete curves by creation time, newest first.
 // The frontend API does not expose a sort by graduation time.
 func (c *Service) ListGraduatedCoins(ctx context.Context, opts PageOptions) (*Page[Coin], error) {
-	page, err := c.listCoins(ctx, "list_graduated_coins", "/coins", "created_timestamp", opts, url.Values{"complete": {"true"}})
+	page, err := c.listCoins(ctx, "list_graduated_coins", "/coins", "created_timestamp", opts, url.Values{"complete": {"true"}}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -67,17 +68,17 @@ func (c *Service) ListGraduatedCoins(ctx context.Context, opts PageOptions) (*Pa
 	return page, nil
 }
 
-// Search finds coins by name, symbol, or mint through the search API.
-// The API can include other assets that Pump.fun indexes.
+// Search finds Solana coins by name, symbol, or mint through the search API.
+// It skips other chains. Page offsets include the skipped entries.
 func (c *Service) Search(ctx context.Context, term string, opts PageOptions) (*Page[Coin], error) {
 	term = strings.TrimSpace(term)
 	if len(term) == 0 || len(term) > 200 {
 		return nil, errs.Invalid("search", "The search text must contain 1 to 200 bytes.")
 	}
-	return c.listCoins(ctx, "search", "/coins/search-v2", "market_cap", opts, url.Values{"searchTerm": {term}})
+	return c.listCoins(ctx, "search", "/coins/search-v2", "market_cap", opts, url.Values{"searchTerm": {term}}, true)
 }
 
-func (c *Service) listCoins(ctx context.Context, op, path, sort string, opts PageOptions, extra url.Values) (*Page[Coin], error) {
+func (c *Service) listCoins(ctx context.Context, op, path, sort string, opts PageOptions, extra url.Values, solanaOnly bool) (*Page[Coin], error) {
 	opts, err := normalizePage(opts)
 	if err != nil {
 		return nil, err
@@ -88,19 +89,45 @@ func (c *Service) listCoins(ctx context.Context, op, path, sort string, opts Pag
 	for k, v := range extra {
 		q[k] = v
 	}
-	var coins []Coin
-	if err := c.transport.Do(ctx, op, http.MethodGet, c.transport.APIURL(path, q), nil, &coins); err != nil {
+	var rows []json.RawMessage
+	if err := c.transport.Do(ctx, op, http.MethodGet, c.transport.APIURL(path, q), nil, &rows); err != nil {
 		return nil, err
 	}
-	if coins == nil || len(coins) > opts.Limit {
+	if rows == nil || len(rows) > opts.Limit {
 		return nil, errs.Decode(op, errors.New("the response must be a bounded array"))
 	}
-	for _, coin := range coins {
+	coins := make([]Coin, 0, len(rows))
+	for _, row := range rows {
+		if solanaOnly {
+			var identity struct {
+				Mint    string `json:"mint"`
+				ChainID string `json:"chain_id"`
+			}
+			if err := json.Unmarshal(row, &identity); err != nil {
+				return nil, errs.Decode(op, err)
+			}
+			// Check the chain before decoding chain-specific amounts or fields.
+			if identity.ChainID != "" && identity.ChainID != "solana" && !strings.HasPrefix(identity.ChainID, "solana:") || strings.HasPrefix(strings.ToLower(identity.Mint), "0x") {
+				continue
+			}
+		}
+		var coin Coin
+		if err := json.Unmarshal(row, &coin); err != nil {
+			return nil, errs.Decode(op, err)
+		}
 		if err := solana.ValidateAddress(coin.Mint); err != nil {
 			return nil, errs.Decode(op, err)
 		}
+		coins = append(coins, coin)
 	}
 	page := newPage(coins, opts)
+	page.SkippedNonSolana = len(rows) - len(coins)
+	page.HasMore = len(rows) == opts.Limit
+	page.NextOffset = nil
+	if page.HasMore {
+		next := opts.Offset + len(rows)
+		page.NextOffset = &next
+	}
 	page.OrderBy = sort + " DESC"
 	return page, nil
 }

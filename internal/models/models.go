@@ -93,14 +93,16 @@ type PageOptions struct {
 }
 
 // Page contains one offset page. A full page can have an empty next page.
+// Search offsets count all source entries, including other chains that it skips.
 type Page[T any] struct {
-	Items      []T    `json:"items" yaml:"items"`
-	Offset     int    `json:"offset" yaml:"offset"`
-	Limit      int    `json:"limit" yaml:"limit"`
-	HasMore    bool   `json:"has_more" yaml:"has_more"`
-	NextOffset *int   `json:"next_offset,omitempty" yaml:"next_offset,omitempty"`
-	Total      *int   `json:"total,omitempty" yaml:"total,omitempty"`
-	OrderBy    string `json:"order_by,omitempty" yaml:"order_by,omitempty"`
+	Items            []T    `json:"items" yaml:"items"`
+	Offset           int    `json:"offset" yaml:"offset"`
+	Limit            int    `json:"limit" yaml:"limit"`
+	HasMore          bool   `json:"has_more" yaml:"has_more"`
+	NextOffset       *int   `json:"next_offset,omitempty" yaml:"next_offset,omitempty"`
+	Total            *int   `json:"total,omitempty" yaml:"total,omitempty"`
+	OrderBy          string `json:"order_by,omitempty" yaml:"order_by,omitempty"`
+	SkippedNonSolana int    `json:"skipped_non_solana,omitempty" yaml:"skipped_non_solana,omitempty"`
 }
 
 // TokenAmount contains an exact raw amount and its decimal scale.
