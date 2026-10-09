@@ -230,3 +230,8 @@ It cannot replay events lost during a connection failure.
 - [Configuration](docs/config.md)
 - [Endpoint sources](docs/endpoints.md)
 - [Project decisions](DECISIONS.md)
+
+## License
+
+This project uses the MIT License.
+See [LICENSE](LICENSE).
