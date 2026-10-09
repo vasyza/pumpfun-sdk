@@ -63,13 +63,13 @@ func NewRoot(out, errOut io.Writer) *cobra.Command {
 		use, short, long, example string
 		read                      func(context.Context, *pumpfun.Client, string) (any, error)
 	}{
-		{"curve MINT", "Read bonding curve state.", "Read the confirmed Pump account for a Solana mint. Amounts use raw units.", "  pumpfun curve MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) {
+		{"curve MINT", "Read bonding curve state.", "Read the confirmed Pump account for a Solana mint. Amounts use raw units. A mint can have no bonding curve.", "  pumpfun curve MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) {
 			return c.GetBondingCurve(ctx, mint)
 		}},
 		{"progress MINT", "Read graduation progress.", "Estimate reserve depletion with current Global state. A complete curve can await pool migration.", "  pumpfun progress MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) {
 			return c.GetGraduationProgress(ctx, mint)
 		}},
-		{"holders MINT", "Read the largest token accounts.", "Read at most 20 largest token accounts and their owners. The result is not a full holder list.", "  pumpfun holders MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) { return c.GetHolders(ctx, mint) }},
+		{"holders MINT", "Read the largest token accounts.", "Read at most 20 largest token accounts and their owners. The result is not a full holder list. Set rpc_url to a private RPC if the public RPC limits requests.", "  pumpfun holders MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) { return c.GetHolders(ctx, mint) }},
 		{"creator MINT", "Read coin creator data.", "Read the creator address and its public profile, if available.", "  pumpfun creator MINT --output json", func(ctx context.Context, c *pumpfun.Client, mint string) (any, error) { return c.GetCreator(ctx, mint) }},
 		{"user ADDRESS", "Read a public user profile.", "Read the public profile for a Solana address.", "  pumpfun user ADDRESS --output json", func(ctx context.Context, c *pumpfun.Client, address string) (any, error) {
 			return c.GetUser(ctx, address)
@@ -245,7 +245,7 @@ func (a *app) coinsCommand() *cobra.Command {
 
 func (a *app) searchCommand() *cobra.Command {
 	options := pumpfun.PageOptions{}
-	cmd := &cobra.Command{Use: "search QUERY", Short: "Find coins.", Long: "Find coins by name, symbol, or mint. Results can include other assets that Pump.fun indexes.", Example: "  pumpfun search 'test coin' --output json", Args: oneArg("search text")}
+	cmd := &cobra.Command{Use: "search QUERY", Short: "Find coins.", Long: "Find Solana coins by name, symbol, or mint. Skip results from other chains. Use next_offset to read the next source page.", Example: "  pumpfun search 'test coin' --output json", Args: oneArg("search text")}
 	pageFlags(cmd, &options)
 	cmd.RunE = a.read(func(cmd *cobra.Command, c *pumpfun.Client, args []string) (any, error) {
 		return c.Search(cmd.Context(), args[0], options)
