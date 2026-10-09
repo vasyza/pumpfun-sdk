@@ -158,7 +158,7 @@ func TestSDKDoesNotImportApplicationCode(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, blocked := range []string{sdkPath + "/internal/cli", sdkPath + "/internal/mcp", sdkPath + "/internal/config", sdkPath + "/internal/logging", "github.com/spf13/cobra", "github.com/modelcontextprotocol/go-sdk"} {
-					if strings.HasPrefix(importPath, blocked) {
+					if importPath == blocked || strings.HasPrefix(importPath, blocked+"/") {
 						t.Errorf("SDK file %s imports application package %s", path, importPath)
 					}
 				}

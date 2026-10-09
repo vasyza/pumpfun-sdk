@@ -1,0 +1,17 @@
+version: "2"
+
+run:
+  go: "1.27"
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - noctx
+    - zerologlint
+
+formatters:
+  enable:
+    - gofmt
