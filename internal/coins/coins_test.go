@@ -179,3 +179,119 @@ func TestInvalidInputDoesNotSendRequests(t *testing.T) {
 		t.Fatal("invalid input sent an HTTP request")
 	}
 }
+
+func TestCoinsPaginationShortPageHasMore(t *testing.T) {
+	shortFixture, err := os.ReadFile("testdata/coins-short-page.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tailFixture, err := os.ReadFile("testdata/coins-tail-page.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyFixture, err := os.ReadFile("testdata/coins-empty-page.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		call func(context.Context, *Service, PageOptions) (*Page[Coin], error)
+	}{
+		{"new", func(ctx context.Context, c *Service, p PageOptions) (*Page[Coin], error) {
+			return c.ListNewCoins(ctx, p)
+		}},
+		{"trending", func(ctx context.Context, c *Service, p PageOptions) (*Page[Coin], error) {
+			return c.ListTrendingCoins(ctx, p)
+		}},
+		{"graduated", func(ctx context.Context, c *Service, p PageOptions) (*Page[Coin], error) {
+			return c.ListGraduatedCoins(ctx, p)
+		}},
+		{"search", func(ctx context.Context, c *Service, p PageOptions) (*Page[Coin], error) {
+			return c.Search(ctx, "test", p)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				if q.Get("limit") != "100" {
+					t.Errorf("expected limit=100, got %s", q.Get("limit"))
+				}
+				switch q.Get("offset") {
+				case "0":
+					_, _ = w.Write(shortFixture)
+				case "70":
+					_, _ = w.Write(tailFixture)
+				case "100":
+					_, _ = w.Write(emptyFixture)
+				default:
+					t.Errorf("unexpected offset: %s", q.Get("offset"))
+				}
+			}, nil)
+
+			ctx := context.Background()
+
+			// First page: requests limit=100, API returns 70 items (< limit).
+			page1, err := tc.call(ctx, client, PageOptions{Limit: 100, Offset: 0})
+			if err != nil {
+				t.Fatalf("first page error: %v", err)
+			}
+			if len(page1.Items) != 70 {
+				t.Fatalf("page1 items = %d, want 70", len(page1.Items))
+			}
+			if !page1.HasMore {
+				t.Fatal("expected page1.HasMore == true for short page with 70 items")
+			}
+			if page1.NextOffset == nil || *page1.NextOffset != 70 {
+				t.Fatalf("page1.NextOffset = %v, want 70", page1.NextOffset)
+			}
+
+			// Second page: requests limit=100 at offset=70, API returns 30 items.
+			page2, err := tc.call(ctx, client, PageOptions{Limit: 100, Offset: *page1.NextOffset})
+			if err != nil {
+				t.Fatalf("second page error: %v", err)
+			}
+			if len(page2.Items) != 30 {
+				t.Fatalf("page2 items = %d, want 30", len(page2.Items))
+			}
+			if !page2.HasMore {
+				t.Fatal("expected page2.HasMore == true for short page with 30 items")
+			}
+			if page2.NextOffset == nil || *page2.NextOffset != 100 {
+				t.Fatalf("page2.NextOffset = %v, want 100", page2.NextOffset)
+			}
+
+			// Third page: requests limit=100 at offset=100, API returns empty array.
+			page3, err := tc.call(ctx, client, PageOptions{Limit: 100, Offset: *page2.NextOffset})
+			if err != nil {
+				t.Fatalf("third page error: %v", err)
+			}
+			if len(page3.Items) != 0 {
+				t.Fatalf("page3 items = %d, want 0", len(page3.Items))
+			}
+			if page3.HasMore {
+				t.Fatal("expected page3.HasMore == false for empty page")
+			}
+			if page3.NextOffset != nil {
+				t.Fatalf("expected page3.NextOffset == nil, got %v", page3.NextOffset)
+			}
+		})
+	}
+}
+
+func TestNewPage(t *testing.T) {
+	p1 := newPage([]int{1, 2, 3}, PageOptions{Limit: 10, Offset: 5})
+	if !p1.HasMore || p1.NextOffset == nil || *p1.NextOffset != 8 {
+		t.Fatalf("p1 = %+v", p1)
+	}
+
+	p2 := newPage([]int{}, PageOptions{Limit: 10, Offset: 5})
+	if p2.HasMore || p2.NextOffset != nil {
+		t.Fatalf("p2 = %+v", p2)
+	}
+
+	p3 := newPage[int](nil, PageOptions{Limit: 10, Offset: 0})
+	if p3.HasMore || p3.NextOffset != nil {
+		t.Fatalf("p3 = %+v", p3)
+	}
+}

@@ -44,7 +44,7 @@ Coin lists and search accept these flags:
 
 Copy `next_offset` from JSON output into the next command.
 An absent next offset means that the page is complete.
-A full page can have an empty next page.
+A non-empty page can have an empty next page.
 Search skips results from other chains.
 Its JSON and YAML output reports `skipped_non_solana` when entries are skipped.
 Search offsets count all source entries, including skipped entries.

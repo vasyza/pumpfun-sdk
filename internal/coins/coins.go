@@ -122,7 +122,7 @@ func (c *Service) listCoins(ctx context.Context, op, path, sort string, opts Pag
 	}
 	page := newPage(coins, opts)
 	page.SkippedNonSolana = len(rows) - len(coins)
-	page.HasMore = len(rows) == opts.Limit
+	page.HasMore = len(rows) > 0
 	page.NextOffset = nil
 	if page.HasMore {
 		next := opts.Offset + len(rows)
@@ -153,7 +153,7 @@ func newPage[T any](items []T, opts PageOptions) *Page[T] {
 	if items == nil {
 		items = []T{}
 	}
-	p := &Page[T]{Items: items, Limit: opts.Limit, Offset: opts.Offset, HasMore: len(items) == opts.Limit}
+	p := &Page[T]{Items: items, Limit: opts.Limit, Offset: opts.Offset, HasMore: len(items) > 0}
 	if p.HasMore {
 		next := opts.Offset + len(items)
 		p.NextOffset = &next

@@ -105,7 +105,7 @@ The default limit is 20.
 The maximum limit is 100.
 The maximum offset is 1000000.
 `Page.OrderBy` states the source ordering.
-A full page means that another page can exist.
+A non-empty page means that another page can exist.
 It does not prove that another page has items.
 List changes can move items between offset pages.
 Search retains Solana coins and skips entries from other chains.
