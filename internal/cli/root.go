@@ -98,6 +98,7 @@ func NewRoot(out, errOut io.Writer) *cobra.Command {
 	setHelp(help)
 	root.SetHelpCommand(help)
 	setHelp(root)
+	setupGroups(root)
 	return root
 }
 
@@ -123,6 +124,21 @@ Common flags:
 {{end}}`)
 	for _, child := range cmd.Commands() {
 		setHelp(child)
+	}
+}
+
+// setupGroups configures each command group to show help and reject unknown subcommands.
+func setupGroups(cmd *cobra.Command) {
+	if cmd.HasSubCommands() {
+		if cmd.Args == nil {
+			cmd.Args = cobra.NoArgs
+		}
+		if cmd.Run == nil && cmd.RunE == nil {
+			cmd.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
+		}
+	}
+	for _, child := range cmd.Commands() {
+		setupGroups(child)
 	}
 }
 
