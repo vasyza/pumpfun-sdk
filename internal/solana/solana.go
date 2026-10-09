@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"github.com/mr-tron/base58"
@@ -74,31 +75,53 @@ func Call[T any](ctx context.Context, c *Client, method string, params any) (T, 
 	if err != nil {
 		return zero, errs.Invalid(method, "The RPC input is not valid.")
 	}
-	var wire struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      uint64          `json:"id"`
-		Result  json.RawMessage `json:"result"`
-		Error   *struct {
-			Code int `json:"code"`
-		} `json:"error"`
-	}
-	if err := c.transport.Do(ctx, method, http.MethodPost, c.transport.RPCURL(), body, &wire); err != nil {
+	var result T
+	err = c.transport.DoDecode(ctx, method, http.MethodPost, c.transport.RPCURL(), body, func(data []byte) error {
+		var wire struct {
+			JSONRPC string          `json:"jsonrpc"`
+			ID      uint64          `json:"id"`
+			Result  json.RawMessage `json:"result"`
+			Error   *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			return errs.Decode(method, err)
+		}
+		if wire.JSONRPC != "2.0" || wire.ID != id {
+			return errs.Decode(method, errors.New("the RPC version or request ID does not match"))
+		}
+		if wire.Error != nil {
+			kind, message := errs.KindRPC, errs.ErrRPC.Message
+			if rpcRateLimited(wire.Error.Code, wire.Error.Message) {
+				kind, message = errs.KindRateLimited, rpcRateLimitMessage
+			}
+			return &errs.Error{Kind: kind, Operation: method, RPCCode: wire.Error.Code, Message: message}
+		}
+		if len(wire.Result) == 0 || string(wire.Result) == "null" {
+			return errs.Decode(method, errors.New("the RPC result is missing"))
+		}
+		if err := json.Unmarshal(wire.Result, &result); err != nil {
+			return errs.Decode(method, err)
+		}
+		return nil
+	})
+	if err != nil {
+		var serviceErr *errs.Error
+		if errors.Is(err, errs.ErrRateLimited) && errors.As(err, &serviceErr) {
+			serviceErr.Message = rpcRateLimitMessage
+		}
 		return zero, err
 	}
-	if wire.JSONRPC != "2.0" || wire.ID != id {
-		return zero, errs.Decode(method, errors.New("the RPC version or request ID does not match"))
-	}
-	if wire.Error != nil {
-		return zero, &errs.Error{Kind: errs.KindRPC, Operation: method, RPCCode: wire.Error.Code, Message: errs.ErrRPC.Message}
-	}
-	if len(wire.Result) == 0 || string(wire.Result) == "null" {
-		return zero, errs.Decode(method, errors.New("the RPC result is missing"))
-	}
-	var result T
-	if err := json.Unmarshal(wire.Result, &result); err != nil {
-		return zero, errs.Decode(method, err)
-	}
 	return result, nil
+}
+
+const rpcRateLimitMessage = "The RPC request rate is too high. Set rpc_url to a private RPC."
+
+func rpcRateLimited(code int, message string) bool {
+	message = strings.ToLower(message)
+	return code == http.StatusTooManyRequests || strings.Contains(message, "rate limit") || strings.Contains(message, "rate-limit") || strings.Contains(message, "too many requests") || strings.Contains(message, "request rate")
 }
 
 func ProgramAccountData(account *Account, op string) ([]byte, error) {

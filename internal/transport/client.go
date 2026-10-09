@@ -152,6 +152,17 @@ func (c *Transport) APIURL(path string, query url.Values) string {
 }
 
 func (c *Transport) Do(ctx context.Context, op, method, endpoint string, body []byte, out any) error {
+	return c.DoDecode(ctx, op, method, endpoint, body, func(data []byte) error {
+		if err := json.Unmarshal(data, out); err != nil {
+			return errs.Decode(op, err)
+		}
+		return nil
+	})
+}
+
+// DoDecode applies one retry budget to HTTP and response rate limit errors.
+// The decoder must return ErrRateLimited for a response that permits a retry.
+func (c *Transport) DoDecode(ctx context.Context, op, method, endpoint string, body []byte, decode func([]byte) error) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	for attempt := 0; ; attempt++ {
@@ -161,14 +172,14 @@ func (c *Transport) Do(ctx context.Context, op, method, endpoint string, body []
 			}
 			return errs.Context(op, context.DeadlineExceeded)
 		}
-		status, retryAfter, err := c.attempt(ctx, op, method, endpoint, body, out)
+		status, retryAfter, err := c.attempt(ctx, op, method, endpoint, body, decode)
 		if err == nil {
 			return nil
 		}
 		if ctx.Err() != nil {
 			return errs.Context(op, ctx.Err())
 		}
-		retryable := status < 400 && errors.Is(err, errs.ErrTransport) || RetryStatus(status)
+		retryable := status < 400 && errors.Is(err, errs.ErrTransport) || RetryStatus(status) || errors.Is(err, errs.ErrRateLimited)
 		if !retryable || attempt >= c.retry.MaxRetries || retryAfter > c.retry.MaxBackoff {
 			return err
 		}
@@ -180,7 +191,7 @@ func (c *Transport) Do(ctx context.Context, op, method, endpoint string, body []
 	}
 }
 
-func (c *Transport) attempt(ctx context.Context, op, method, endpoint string, body []byte, out any) (int, time.Duration, error) {
+func (c *Transport) attempt(ctx context.Context, op, method, endpoint string, body []byte, decode func([]byte) error) (int, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, 0, errs.Invalid(op, "The request URL is not valid.")
@@ -210,8 +221,14 @@ func (c *Transport) attempt(ctx context.Context, op, method, endpoint string, bo
 	if int64(len(data)) > c.maxBody {
 		return resp.StatusCode, 0, errs.Decode(op, fmt.Errorf("the response exceeds the size limit"))
 	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return resp.StatusCode, 0, errs.Decode(op, err)
+	if err := decode(data); err != nil {
+		var serviceErr *errs.Error
+		if errors.Is(err, errs.ErrRateLimited) && errors.As(err, &serviceErr) {
+			withResponse := *serviceErr
+			withResponse.StatusCode, withResponse.RetryAfter = resp.StatusCode, retryAfter
+			err = &withResponse
+		}
+		return resp.StatusCode, retryAfter, err
 	}
 	return resp.StatusCode, 0, nil
 }

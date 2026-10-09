@@ -79,6 +79,22 @@ func TestRetryAfterIsNotShortened(t *testing.T) {
 	}
 }
 
+func TestDecodedRateErrorRetainsSharedErrorFields(t *testing.T) {
+	shared := &errs.Error{Kind: errs.KindRateLimited, Operation: "rpc", RPCCode: 429, Message: "The request rate is too high."}
+	client := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		_, _ = io.WriteString(w, `{}`)
+	}, nil)
+	err := client.DoDecode(t.Context(), "rpc", http.MethodPost, client.RPCURL(), []byte(`{}`), func([]byte) error { return shared })
+	var typed *errs.Error
+	if !errors.Is(err, errs.ErrRateLimited) || !errors.As(err, &typed) || typed.RPCCode != 429 || typed.StatusCode != 200 || typed.RetryAfter != 2*time.Minute {
+		t.Fatalf("error = %+v", err)
+	}
+	if shared.StatusCode != 0 || shared.RetryAfter != 0 {
+		t.Fatalf("decoder error changed: %+v", shared)
+	}
+}
+
 func TestCancellationAndTimeout(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
