@@ -25,3 +25,9 @@
 - Adapt the MCP SDK's standard `slog` interface to zerolog. Zerolog is the only log writer. Use a writer adapter for HTTP server errors.
 - Lock config writes across processes. Replace the YAML file atomically with mode `0600`. Config commands can read invalid values to help repair a file.
 - Write project text in ASD-STE100 style. No licensed dictionary checker is available in the workspace. Review help and documentation with short sentences and direct verbs.
+- Disable the default Cobra completion command. Supply STE help for every command, including the help command.
+- Collect changed inherited flags by their `Changed` field. Cobra parses them in the child flag set. Its root `Visit` list is not sufficient.
+- Block external HTTP requests in CLI tests. This prevents a config or flag regression from turning a mock test into a live request.
+- Pin CI actions by commit. Build the linter with Go 1.27.1 so it can check the project toolchain.
+- Put MCP code in `internal/mcp`. CLI and MCP handlers use the public SDK facade. The owner requested this module layout.
+- Pass HTTP request cancellation to the MCP tool context. This stops the upstream SDK read when the client disconnects.
